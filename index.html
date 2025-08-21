@@ -11,8 +11,9 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         body, html, #root { margin: 0; padding: 0; font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif; }
+        /* OBS/캡처 모드일 때 배경을 완전히 투명하게 만듭니다. */
         .transparent-mode, .transparent-mode #root { background-color: transparent !important; }
-        .board-wrapper { padding: 20px; /* OBS에서 날개가 잘리지 않도록 여백 추가 */ }
+        .board-wrapper { padding: 20px; /* 날개가 잘리지 않도록 충분한 여백 확보 */ }
         .board{min-width:520px;max-width:960px;pointer-events:auto;position:relative;padding:10px 16px;border-radius:20px;display:flex;flex-direction:column;align-items:center; color:#e9f1ff;}
         .sc1{background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,.46));border:1px solid rgba(59,214,255,.35);box-shadow:inset 0 0 0 1px rgba(59,214,255,.12),0 8px 22px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(2px)}
         .clear{background:transparent;border:none;box-shadow:none;backdrop-filter:none}
@@ -59,22 +60,10 @@
         const saveJSON = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } };
 
         const Scoreboard = ({ state }) => {
-            const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style, t1: t1_override, t2: t2_override, r1: r1_override, r2: r2_override, spL: spL_override, spR: spR_override } = state;
-            
-            const isViewMode = new URLSearchParams(window.location.search).get('admin') !== 'true';
-            
-            let team1, team2, currentPair;
-
-            if(isViewMode) {
-                team1 = { name: t1_override || '', race: r1_override || '' };
-                team2 = { name: t2_override || '', race: r2_override || '' };
-                currentPair = { spL: spL_override || '', spR: spR_override || ''};
-            } else {
-                currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
-                team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
-                team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
-            }
-
+            const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
+            const currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
+            const team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
+            const team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
             const boardStyle = { '--accent': THEMES[theme], '--c1': c1, '--c2': c2, '--ov': overlays.opacity, minWidth: '520px', maxWidth: '960px', ...(w && { minWidth: 'unset', maxWidth: 'unset', width: /vw|%|px$/.test(w) ? w : `${w}px` }) };
             const team1NameRef = React.useRef(null);
             const team2NameRef = React.useRef(null);
@@ -159,41 +148,6 @@
                 const slotIndex = state.activeSlot - 1;
                 setState(prevState => ({ ...prevState, lineup: prevState.lineup.map((s, i) => i === slotIndex ? { ...s, [side]: s[side] === value ? '' : value } : s) }));
             }, [state.activeSlot, setState]);
-
-            const handleCopyUrl = () => {
-                const params = new URLSearchParams();
-                const activePair = state.lineup[state.activeSlot - 1] || {};
-                const team1 = state.rosterHome.find(p => p.name === activePair.h) || { name: activePair.h || '', race: '' };
-                const team2 = state.rosterAway.find(p => p.name === activePair.a) || { name: activePair.a || '', race: '' };
-
-                const stateToEncode = { ...state };
-                delete stateToEncode.rosterHome;
-                delete stateToEncode.rosterAway;
-                delete stateToEncode.lineup;
-
-                Object.entries(stateToEncode).forEach(([key, value]) => {
-                     if (typeof value === 'object' && value !== null) {
-                        params.set(key, JSON.stringify(value));
-                    } else if (value !== '' && value !== null && value !== undefined) {
-                        params.set(key, value);
-                    }
-                });
-                
-                params.set('t1', team1.name);
-                params.set('r1', team1.race);
-                params.set('t2', team2.name);
-                params.set('r2', team2.race);
-                params.set('spL', activePair.spL || '');
-                params.set('spR', activePair.spR || '');
-                params.set('style', 'clear');
-                
-                const obsUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-                navigator.clipboard.writeText(obsUrl).then(() => {
-                    alert('OBS용 URL이 복사되었습니다!');
-                }, () => {
-                    alert('URL 복사에 실패했습니다.');
-                });
-            };
             
             return (
                 <div className="fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300" style={{opacity:isVisible?1:0, pointerEvents:isVisible?'auto':'none'}}>
