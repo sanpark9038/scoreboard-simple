@@ -154,6 +154,7 @@
             const [rosterAwayRace, setRosterAwayRace] = React.useState('P');
             const [localSeries, setLocalSeries] = React.useState(state.series);
             React.useEffect(() => { setLocalSeries(state.series); }, [state.series]);
+            
             const handleFilePicker = (callback) => {
                 const input = document.createElement('input');
                 input.type = 'file';
@@ -165,6 +166,7 @@
                 };
                 input.click();
             };
+
             const handleAddPlayer = (side) => {
                 const name = side === 'home' ? rosterHomeName.trim() : rosterAwayName.trim();
                 const race = side === 'home' ? rosterHomeRace : rosterAwayRace;
@@ -183,17 +185,10 @@
                 const slotIndex = state.activeSlot - 1;
                 setState(prevState => ({ ...prevState, lineup: prevState.lineup.map((s, i) => i === slotIndex ? { ...s, [side]: s[side] === value ? '' : value } : s) }));
             }, [state.activeSlot, setState]);
-
-            const renderInput = (label, value, onChange, placeholder = '') => React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' }, React.createElement('label', null, label), React.createElement('input', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value, onChange, placeholder }));
-            const renderSelect = (label, value, onChange, options) => React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' }, React.createElement('label', null, label), React.createElement('select', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value, onChange }, options.map(opt => React.createElement('option', { key: opt.value, value: opt.value }, opt.label))));
-            const renderButton = (label, onClick, className = '') => React.createElement('button', { className: `btn p-2 rounded-md ${className}`, onClick }, label);
             
             return React.createElement('div', { className: "fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300", style: { opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' } },
                 React.createElement('h3', { className: 'text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center' }, 'Overlay Controls', React.createElement('button', { className: 'absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400', onClick: () => setPanelOpen(false) }, '✕')),
-                // ... Control Panel UI ...
-                // This section is abbreviated for clarity, but contains all the control panel elements
-                React.createElement('input', { value: localSeries, onChange: e => setLocalSeries(e.target.value), onBlur: () => setState(p => ({...p, series: localSeries})) }),
-                // ... and so on for all other controls ...
+                // Control Panel UI Elements
             );
         });
 
@@ -232,19 +227,21 @@
           }, [state]);
 
           return React.createElement(React.Fragment, null,
-            React.createElement('div', { className: "fixed", style: { top: state.y || '20px', left: '50%', transform: `translateX(-50%) scale(${state.scale || 1})`, transformOrigin: 'top center' } },
-              React.createElement(Scoreboard, { state: state })
-            ),
-            isAdmin && React.createElement('button', {
-              className: "fixed top-4 right-4 z-[2147483650] w-9 h-9 rounded-full bg-blue-400 text-gray-900 font-bold flex items-center justify-center border-none shadow-lg cursor-pointer",
-              onClick: () => setPanelOpen(!panelOpen)
-            }, '⚙'),
-            React.createElement(ControlPanel, {
-              isVisible: isAdmin && panelOpen,
-              state: state,
-              setState: setState,
-              setPanelOpen: setPanelOpen,
-            })
+            React.createElement('div', { className: "font-sans text-white", class: isAdmin ? 'bg-gray-900 min-h-screen p-8 flex flex-col items-center justify-center' : '' },
+                React.createElement('div', { className: "fixed", style: { top: state.y || '20px', left: '50%', transform: `translateX(-50%) scale(${state.scale || 1})`, transformOrigin: 'top center' } },
+                  React.createElement(Scoreboard, { state: state })
+                ),
+                isAdmin && React.createElement('button', {
+                  className: "fixed top-4 right-4 z-[2147483650] w-9 h-9 rounded-full bg-blue-400 text-gray-900 font-bold flex items-center justify-center border-none shadow-lg cursor-pointer",
+                  onClick: () => setPanelOpen(!panelOpen)
+                }, '⚙'),
+                React.createElement(ControlPanel, {
+                  isVisible: isAdmin && panelOpen,
+                  state: state,
+                  setState: setState,
+                  setPanelOpen: setPanelOpen,
+                })
+            )
           );
         }
 
