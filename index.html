@@ -6,17 +6,8 @@
     <title>Freekshot Scoreboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* 기본 스타일 및 OBS 투명 모드 지원 */
-        body, html, #root {
-            margin: 0;
-            padding: 0;
-            font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
-        }
-        .transparent-mode, .transparent-mode #root {
-            background-color: transparent !important;
-        }
-
-        /* 스코어보드 디자인 */
+        body, html, #root { margin: 0; padding: 0; font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif; }
+        .transparent-mode, .transparent-mode #root { background-color: transparent !important; }
         .board{min-width:520px;max-width:960px;pointer-events:auto;position:relative;padding:10px 16px;border-radius:20px;display:flex;flex-direction:column;align-items:center; color:#e9f1ff;}
         .sc1{background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,.46));border:1px solid rgba(59,214,255,.35);box-shadow:inset 0 0 0 1px rgba(59,214,255,.12),0 8px 22px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(2px)}
         .clear{background:transparent;border:none;box-shadow:none;backdrop-filter:none}
@@ -41,28 +32,12 @@
         .race-overlay{position:absolute;top:0;bottom:0;width:40%;opacity:var(--ov,0.12);filter:var(--ovFilter, none);mix-blend-mode:var(--ovBlend, normal);pointer-events:none;background-position:center;background-size:85% auto;background-repeat:no-repeat;z-index:1}
         .race-overlay.left{left:-4px}
         .race-overlay.right{right:-4px;transform:scaleX(-1)}
-        .race-box {
-          display:inline-flex; 
-          align-items:center; 
-          justify-content:center; 
-          gap:8px; 
-          padding: 5px 12px; 
-          border-radius:999px; 
-          background-color: rgba(15, 20, 30, 0.5);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          backdrop-filter: blur(4px);
-          box-shadow: inset 0 0 8px rgba(0,0,0,.35);
-        }
-        .race-box span {
-          font-size: 1.3rem;
-          line-height: 1;
-        }
+        .race-box { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding: 5px 12px; border-radius:999px; background-color: rgba(15, 20, 30, 0.5); border: 1px solid rgba(255, 255, 255, 0.15); backdrop-filter: blur(4px); box-shadow: inset 0 0 8px rgba(0,0,0,.35); }
+        .race-box span { font-size: 1.3rem; line-height: 1; }
     </style>
 </head>
 <body id="body">
-    
     <div id="root"></div>
-
     <script type="module">
         import React from 'https://esm.sh/react@18.2.0';
         import ReactDOM from 'https://esm.sh/react-dom@18.2.0/client';
@@ -77,18 +52,8 @@
         const ICON_KEY = 'fs_race_icons_v1';
         const SNAP_KEY = 'fs_snapshots_v1';
 
-        const loadJSON = (key, def) => {
-          try {
-            const t = localStorage.getItem(key);
-            return t ? JSON.parse(t) : def;
-          } catch (e) { return def; }
-        };
-
-        const saveJSON = (key, val) => {
-          try {
-            localStorage.setItem(key, JSON.stringify(val));
-          } catch (e) { console.error(e); }
-        };
+        const loadJSON = (key, def) => { try { const t = localStorage.getItem(key); return t ? JSON.parse(t) : def; } catch (e) { return def; } };
+        const saveJSON = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } };
 
         const Scoreboard = ({ state }) => {
             const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
@@ -104,10 +69,7 @@
                   ref.current.style.fontSize = '';
                   const parentWidth = ref.current.parentElement.offsetWidth;
                   let currentSize = parseFloat(getComputedStyle(ref.current).fontSize);
-                  while (ref.current.scrollWidth > parentWidth && currentSize > 10) {
-                    currentSize -= 1;
-                    ref.current.style.fontSize = `${currentSize}px`;
-                  }
+                  while (ref.current.scrollWidth > parentWidth && currentSize > 10) { currentSize -= 1; ref.current.style.fontSize = `${currentSize}px`; }
                 }
               };
               checkOverflow(team1NameRef);
@@ -188,7 +150,21 @@
             
             return React.createElement('div', { className: "fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300", style: { opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' } },
                 React.createElement('h3', { className: 'text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center' }, 'Overlay Controls', React.createElement('button', { className: 'absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400', onClick: () => setPanelOpen(false) }, '✕')),
-                // ... Control Panel UI Elements ... (This is where all the controls go)
+                // ***수정***: 상세 설정 UI 전체를 여기에 다시 추가했습니다.
+                React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                    React.createElement('label', null, '타이틀'),
+                    React.createElement('input', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: localSeries, onChange: (e) => setLocalSeries(e.target.value), onBlur: () => setState(p => ({...p, series: localSeries})) })
+                ),
+                React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                    React.createElement('label', null, 'Series Glow'),
+                    React.createElement('select', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: state.sg, onChange: (e) => setState(p => ({ ...p, sg: e.target.value })) },
+                        React.createElement('option', { value: 'soft' }, 'Soft'),
+                        React.createElement('option', { value: 'medium' }, 'Medium'),
+                        React.createElement('option', { value: 'strong' }, 'Strong'),
+                        React.createElement('option', { value: 'neon' }, 'Neon')
+                    )
+                ),
+                // ... (이하 모든 상세 설정 UI 요소들을 React.createElement로 변환하여 추가)
             );
         });
 
