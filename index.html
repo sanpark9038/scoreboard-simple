@@ -10,10 +10,19 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body, html, #root { margin: 0; padding: 0; font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif; }
-        /* OBS/캡처 모드일 때 배경을 완전히 투명하게 만듭니다. */
-        .transparent-mode, .transparent-mode #root { background-color: transparent !important; }
-        .board-wrapper { padding: 20px; /* 날개가 잘리지 않도록 충분한 여백 확보 */ }
+        /* 페이지 전체 배경을 투명하게 설정 */
+        body, html, #root { 
+            margin: 0; 
+            padding: 0; 
+            font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
+            background-color: transparent !important;
+        }
+        .board-wrapper { 
+            padding: 20px; /* 날개가 잘리지 않도록 충분한 여백 확보 */ 
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
         .board{min-width:520px;max-width:960px;pointer-events:auto;position:relative;padding:10px 16px;border-radius:20px;display:flex;flex-direction:column;align-items:center; color:#e9f1ff;}
         .sc1{background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,.46));border:1px solid rgba(59,214,255,.35);box-shadow:inset 0 0 0 1px rgba(59,214,255,.12),0 8px 22px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(2px)}
         .clear{background:transparent;border:none;box-shadow:none;backdrop-filter:none}
@@ -61,9 +70,11 @@
 
         const Scoreboard = ({ state }) => {
             const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
+            
             const currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
             const team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
             const team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
+
             const boardStyle = { '--accent': THEMES[theme], '--c1': c1, '--c2': c2, '--ov': overlays.opacity, minWidth: '520px', maxWidth: '960px', ...(w && { minWidth: 'unset', maxWidth: 'unset', width: /vw|%|px$/.test(w) ? w : `${w}px` }) };
             const team1NameRef = React.useRef(null);
             const team2NameRef = React.useRef(null);
@@ -115,7 +126,7 @@
             );
         };
         
-        const ControlPanel = React.memo(({ isVisible, state, setState, setPanelOpen }) => {
+        const ControlPanel = React.memo(({ state, setState }) => {
             const [rosterHomeName, setRosterHomeName] = React.useState('');
             const [rosterAwayName, setRosterAwayName] = React.useState('');
             const [rosterHomeRace, setRosterHomeRace] = React.useState('T');
@@ -150,10 +161,8 @@
             }, [state.activeSlot, setState]);
             
             return (
-                <div className="fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300" style={{opacity:isVisible?1:0, pointerEvents:isVisible?'auto':'none'}}>
-                    <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center">Overlay Controls
-                        <button className="absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400" onClick={()=>setPanelOpen(false)}>✕</button>
-                    </h3>
+                <div className="fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize">
+                    <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center">Overlay Controls</h3>
                     
                     <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
                         <label>타이틀</label>
@@ -287,67 +296,43 @@
                             <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, sets:''}))}>Clear</button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
-                        <label>OBS URL 복사</label>
-                        <button className="bg-green-600 text-white font-bold px-3 py-2 rounded-md" onClick={handleCopyUrl}>복사하기</button>
-                    </div>
                 </div>
             );
         });
 
         function App() {
-          const [panelOpen, setPanelOpen] = React.useState(false);
-          const [isAdmin, setIsAdmin] = React.useState(false);
+          const [panelOpen, setPanelOpen] = React.useState(true); // Always show panel for capture
           const [state, setState] = React.useState({
             theme: 'protoss', style: 'sc1', series: 'Bo5', sg: 'strong', c1: '#e35a5a', c2: '#3bd6ff', s1: 0, s2: 0, sets: '', l1: '', l2: '', w: '', y: '', rosterHome: [], rosterAway: [], lineup: Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })), activeSlot: 1, overlays: { T: '', P: '', Z: '', opacity: 0.12, mode: 'color' }, icons: { T: '', P: '', Z: '' }, scale: 1,
           });
           
           React.useEffect(() => {
-            const qs = new URLSearchParams(window.location.search);
-            const isAdminMode = qs.get('admin') === 'true';
-            setIsAdmin(isAdminMode);
-            setPanelOpen(isAdminMode);
-
-            if (qs.get('style') === 'clear') {
-              document.body.classList.add('transparent-mode');
-            }
+            document.body.classList.add('transparent-mode'); // Always transparent
             
-            if (!isAdminMode) {
-                const newState = {};
-                for (let [key, value] of qs.entries()) {
-                    try { newState[key] = JSON.parse(value); } catch (e) { newState[key] = value; }
-                }
-                setState(prev => ({...prev, ...newState}));
-
-            } else {
-                const lineup = loadJSON(LINEUP_KEY, Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })));
-                const rosterHome = loadJSON(RHOME_KEY, []);
-                const rosterAway = loadJSON(RAWAY_KEY, []);
-                const activeSlot = parseInt(localStorage.getItem(ACTIVE_KEY) || '1', 10);
-                const overlays = loadJSON(OV_KEY, { T: '', P: '', Z: '', opacity: 0.12, mode: 'color' });
-                const icons = loadJSON(ICON_KEY, { T: '', P: '', Z: '' });
-                setState(prevState => ({ ...prevState, lineup, rosterHome, rosterAway, activeSlot, overlays, icons }));
-            }
+            const lineup = loadJSON(LINEUP_KEY, Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })));
+            const rosterHome = loadJSON(RHOME_KEY, []);
+            const rosterAway = loadJSON(RAWAY_KEY, []);
+            const activeSlot = parseInt(localStorage.getItem(ACTIVE_KEY) || '1', 10);
+            const overlays = loadJSON(OV_KEY, { T: '', P: '', Z: '', opacity: 0.12, mode: 'color' });
+            const icons = loadJSON(ICON_KEY, { T: '', P: '', Z: '' });
+            setState(prevState => ({ ...prevState, lineup, rosterHome, rosterAway, activeSlot, overlays, icons }));
           }, []);
 
           React.useEffect(() => {
-            if (isAdmin) {
-              saveJSON(LINEUP_KEY, state.lineup);
-              saveJSON(RHOME_KEY, state.rosterHome);
-              saveJSON(RAWAY_KEY, state.rosterAway);
-              localStorage.setItem(ACTIVE_KEY, String(state.activeSlot));
-              saveJSON(OV_KEY, state.overlays);
-              saveJSON(ICON_KEY, state.icons);
-            }
-          }, [state, isAdmin]);
+            saveJSON(LINEUP_KEY, state.lineup);
+            saveJSON(RHOME_KEY, state.rosterHome);
+            saveJSON(RAWAY_KEY, state.rosterAway);
+            localStorage.setItem(ACTIVE_KEY, String(state.activeSlot));
+            saveJSON(OV_KEY, state.overlays);
+            saveJSON(ICON_KEY, state.icons);
+          }, [state]);
 
           return (
-            <div className={`font-sans text-white ${isAdmin ? 'bg-gray-900 min-h-screen' : ''}`}>
+            <div className="font-sans text-white">
                 <div className="fixed board-wrapper" style={{ top: state.y || '0px', left: '50%', transform: `translateX(-50%) scale(${state.scale || 1})`, transformOrigin: 'top center' }}>
                   <Scoreboard state={state} />
                 </div>
-                {isAdmin && <button className="fixed top-4 right-4 z-[2147483650] w-9 h-9 rounded-full bg-blue-400 text-gray-900 font-bold flex items-center justify-center border-none shadow-lg cursor-pointer" onClick={() => setPanelOpen(!panelOpen)}>⚙</button>}
-                {isAdmin && <ControlPanel isVisible={panelOpen} state={state} setState={setState} setPanelOpen={setPanelOpen} />}
+                <ControlPanel isVisible={panelOpen} state={state} setState={setState} setPanelOpen={setPanelOpen} />
             </div>
           );
         }
