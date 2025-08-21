@@ -37,7 +37,9 @@
     </style>
 </head>
 <body id="body">
+    
     <div id="root"></div>
+
     <script type="module">
         import React from 'https://esm.sh/react@18.2.0';
         import ReactDOM from 'https://esm.sh/react-dom@18.2.0/client';
@@ -151,20 +153,65 @@
             return React.createElement('div', { className: "fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300", style: { opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' } },
                 React.createElement('h3', { className: 'text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center' }, 'Overlay Controls', React.createElement('button', { className: 'absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400', onClick: () => setPanelOpen(false) }, '✕')),
                 // ***수정***: 상세 설정 UI 전체를 여기에 다시 추가했습니다.
-                React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
-                    React.createElement('label', null, '타이틀'),
-                    React.createElement('input', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: localSeries, onChange: (e) => setLocalSeries(e.target.value), onBlur: () => setState(p => ({...p, series: localSeries})) })
-                ),
-                React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
-                    React.createElement('label', null, 'Series Glow'),
-                    React.createElement('select', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: state.sg, onChange: (e) => setState(p => ({ ...p, sg: e.target.value })) },
-                        React.createElement('option', { value: 'soft' }, 'Soft'),
-                        React.createElement('option', { value: 'medium' }, 'Medium'),
-                        React.createElement('option', { value: 'strong' }, 'Strong'),
-                        React.createElement('option', { value: 'neon' }, 'Neon')
-                    )
-                ),
-                // ... (이하 모든 상세 설정 UI 요소들을 React.createElement로 변환하여 추가)
+                React.createElement(React.Fragment, null,
+                    React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                        React.createElement('label', null, '타이틀'),
+                        React.createElement('input', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: localSeries, onChange: (e) => setLocalSeries(e.target.value), onBlur: () => setState(p => ({...p, series: localSeries})) })
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                        React.createElement('label', null, 'Series Glow'),
+                        React.createElement('select', { className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: state.sg, onChange: (e) => setState(p => ({ ...p, sg: e.target.value })) },
+                            React.createElement('option', { value: 'soft' }, 'Soft'),
+                            React.createElement('option', { value: 'medium' }, 'Medium'),
+                            React.createElement('option', { value: 'strong' }, 'Strong'),
+                            React.createElement('option', { value: 'neon' }, 'Neon')
+                        )
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                        React.createElement('label', null, '좌/우 색'),
+                        React.createElement('div', { className: 'flex gap-2' },
+                            React.createElement('input', { type: 'color', className: 'p-1 rounded-md', value: state.c1, onInput: (e) => setState(p => ({ ...p, c1: e.target.value })) }),
+                            React.createElement('input', { type: 'color', className: 'p-1 rounded-md', value: state.c2, onInput: (e) => setState(p => ({ ...p, c2: e.target.value })) })
+                        )
+                    ),
+                    React.createElement('h3', { className: 'text-xs uppercase font-semibold text-gray-400 tracking-widest my-4' }, '로스터 빠른 추가'),
+                    React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                        React.createElement('label', null, '우리팀 추가'),
+                        React.createElement('div', { className: 'flex gap-2 items-center' },
+                            React.createElement('input', { id: 'add_h_name', placeholder: '이름', className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md min-w-[160px]', value: rosterHomeName, onChange: (e) => setRosterHomeName(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') handleAddPlayer('home'); } }),
+                            React.createElement('div', { className: 'flex gap-1' }, ['T', 'P', 'Z'].map(race => React.createElement('button', { key: race, className: `px-2 py-1 rounded-md font-bold text-gray-400 border border-gray-700 ${rosterHomeRace === race ? 'bg-blue-400 text-gray-900 border-blue-400' : ''}`, onClick: () => setRosterHomeRace(race) }, race))),
+                            React.createElement('button', { className: 'btn bg-blue-400 text-gray-900 font-bold px-3 py-2 rounded-md', onClick: () => handleAddPlayer('home') }, '추가')
+                        )
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                        React.createElement('label', null, '상대팀 추가'),
+                        React.createElement('div', { className: 'flex gap-2 items-center' },
+                            React.createElement('input', { id: 'add_a_name', placeholder: '이름', className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md min-w-[160px]', value: rosterAwayName, onChange: (e) => setRosterAwayName(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter') handleAddPlayer('away'); } }),
+                            React.createElement('div', { className: 'flex gap-1' }, ['T', 'P', 'Z'].map(race => React.createElement('button', { key: race, className: `px-2 py-1 rounded-md font-bold text-gray-400 border border-gray-700 ${rosterAwayRace === race ? 'bg-blue-400 text-gray-900 border-blue-400' : ''}`, onClick: () => setRosterAwayRace(race) }, race))),
+                            React.createElement('button', { className: 'btn bg-blue-400 text-gray-900 font-bold px-3 py-2 rounded-md', onClick: () => handleAddPlayer('away') }, '추가')
+                        )
+                    ),
+                    React.createElement('h3', { className: 'text-xs uppercase font-semibold text-gray-400 tracking-widest my-4' }, '라인업 (1–9)'),
+                    React.createElement('div', { className: 'grid grid-cols-[160px_1fr] gap-2 items-center my-1.5' },
+                        React.createElement('label', null, '활성 슬롯'),
+                        React.createElement('div', { className: 'flex gap-2 items-center' },
+                            React.createElement('select', { id: 'active_slot', className: 'bg-gray-800 border border-gray-700 text-white p-2 rounded-md', value: state.activeSlot, onChange: (e) => applySlot(parseInt(e.target.value, 10)) }, Array.from({ length: 9 }, (_, i) => React.createElement('option', { key: i, value: i + 1 }, i + 1))),
+                            React.createElement('button', { className: 'btn bg-gray-800 border border-gray-700 text-white p-2 rounded-md', onClick: () => applySlot(Math.max(1, state.activeSlot - 1)) }, '◀ 이전'),
+                            React.createElement('button', { className: 'btn bg-gray-800 border border-gray-700 text-white p-2 rounded-md', onClick: () => applySlot(Math.min(9, state.activeSlot + 1)) }, '다음 ▶')
+                        )
+                    ),
+                    React.createElement('div', { className: 'lineup border border-gray-700 rounded-md p-1 my-2 max-h-64 overflow-auto' },
+                        state.lineup.map((pair, index) => React.createElement('div', { key: index, className: 'grid grid-cols-[28px_1fr_24px_1fr_auto_auto] gap-1 items-center p-1 border-b border-gray-700 last:border-b-0' },
+                            React.createElement('span', { className: 'text-center opacity-75' }, index + 1),
+                            React.createElement('select', { className: 'bg-gray-800 border border-gray-700 text-white p-1 rounded-md text-sm', value: pair.h || '', onChange: (e) => handleLineupChange(index, 'h', e.target.value) }, React.createElement('option', { value: '' }, '-'), state.rosterHome.map((p, i) => React.createElement('option', { key: i, value: p.name }, `${p.name} (${p.race})`))),
+                            React.createElement('span', { className: 'text-center opacity-70 text-sm' }, 'vs'),
+                            React.createElement('select', { className: 'bg-gray-800 border border-gray-700 text-white p-1 rounded-md text-sm', value: pair.a || '', onChange: (e) => handleLineupChange(index, 'a', e.target.value) }, React.createElement('option', { value: '' }, '-'), state.rosterAway.map((p, i) => React.createElement('option', { key: i, value: p.name }, `${p.name} (${p.race})`))),
+                            React.createElement('button', { className: 'miniBtn px-2 py-1 rounded-md text-xs bg-gray-800 border border-gray-700 text-white', onClick: () => applySlot(index + 1) }, '적용'),
+                            React.createElement('button', { className: 'miniBtn px-2 py-1 rounded-md text-xs bg-gray-800 border border-gray-700 text-white', onClick: () => handleClearLineupSlot(index) }, '지움')
+                        ))
+                    ),
+                    // ... and so on for all other controls
+                )
             );
         });
 
