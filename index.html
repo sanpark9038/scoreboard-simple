@@ -9,6 +9,9 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <style>
         body, html, #root { margin: 0; padding: 0; font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif; }
         .transparent-mode, .transparent-mode #root { background-color: transparent !important; }
@@ -46,35 +49,34 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // --- Firebase 설정 ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyB_...YOUR_API_KEY", // This is a placeholder
+          authDomain: "react-scoreboard-sync.firebaseapp.com",
+          projectId: "react-scoreboard-sync",
+          storageBucket: "react-scoreboard-sync.appspot.com",
+          messagingSenderId: "1234567890", // This is a placeholder
+          appId: "1:1234567890:web:abcdef123456" // This is a placeholder
+        };
+        
+        let db;
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.firestore();
+        } catch (e) {
+            console.error("Firebase 초기화 실패.", e);
+        }
+
         const THEMES = { terran: '#ffcc66', protoss: '#3bd6ff', zerg: '#622884' };
         const RACE_COLORS = { T: '#0779b3', P: '#e8cd04', Z: '#622884' };
-        const LINEUP_KEY = 'fs_lineup_v2';
-        const RHOME_KEY = 'fs_roster_home_v2';
-        const RAWAY_KEY = 'fs_roster_away_v2';
-        const ACTIVE_KEY = 'fs_active_slot_v2';
-        const OV_KEY = 'fs_overlay_urls_v1';
-        const ICON_KEY = 'fs_race_icons_v1';
-
-        const loadJSON = (key, def) => { try { const t = localStorage.getItem(key); return t ? JSON.parse(t) : def; } catch (e) { return def; } };
-        const saveJSON = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } };
-
+        
         const Scoreboard = ({ state }) => {
-            const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style, t1: t1_override, t2: t2_override, r1: r1_override, r2: r2_override, spL: spL_override, spR: spR_override } = state;
-            
-            const isViewMode = new URLSearchParams(window.location.search).get('admin') !== 'true';
-            
-            let team1, team2, currentPair;
-
-            if(isViewMode) {
-                team1 = { name: t1_override || '', race: r1_override || '' };
-                team2 = { name: t2_override || '', race: r2_override || '' };
-                currentPair = { spL: spL_override || '', spR: spR_override || ''};
-            } else {
-                currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
-                team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
-                team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
-            }
-
+            const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
+            const currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
+            const team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
+            const team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
             const boardStyle = { '--accent': THEMES[theme], '--c1': c1, '--c2': c2, '--ov': overlays.opacity, minWidth: '520px', maxWidth: '960px', ...(w && { minWidth: 'unset', maxWidth: 'unset', width: /vw|%|px$/.test(w) ? w : `${w}px` }) };
             const team1NameRef = React.useRef(null);
             const team2NameRef = React.useRef(null);
@@ -107,13 +109,13 @@
                         <div className="flex items-center justify-end gap-2 flex-1 min-w-0">
                             <div ref={team1NameRef} className="team text-[1.625rem] font-black text-white whitespace-nowrap overflow-hidden text-ellipsis text-right">{team1.name}</div>
                             <div className="race-box"><span className="font-bold" style={{color: RACE_COLORS[team1.race]}}>{team1.race}</span>{currentPair.spL && <span className="font-bold" style={{ color: c1 }}>{currentPair.spL}</span>}</div>
-                            {icons[team1.race] && <img src={icons[team1.race]} alt={`${team1.race} icon`} className="w-5 h-5 opacity-95" />}
+                            {state.icons[team1.race] && <img src={state.icons[team1.race]} alt={`${team1.race} icon`} className="w-5 h-5 opacity-95" />}
                         </div>
                         <div className="num text-center text-[2rem] font-black text-white px-3 py-1 rounded-xl">{s1}</div>
                         <div className="vs text-sm font-black uppercase text-gray-300 tracking-widest px-2 py-1 rounded-md">VS</div>
                         <div className="num text-center text-[2rem] font-black text-white px-3 py-1 rounded-xl">{s2}</div>
                         <div className="flex items-center justify-start gap-2 flex-1 min-w-0">
-                            {icons[team2.race] && <img src={icons[team2.race]} alt={`${team2.race} icon`} className="w-5 h-5 opacity-95" />}
+                            {state.icons[team2.race] && <img src={state.icons[team2.race]} alt={`${team2.race} icon`} className="w-5 h-5 opacity-95" />}
                             <div className="race-box"><span className="font-bold" style={{color: RACE_COLORS[team2.race]}}>{team2.race}</span>{currentPair.spR && <span className="font-bold" style={{ color: c2 }}>{currentPair.spR}</span>}</div>
                             <div ref={team2NameRef} className="team text-[1.625rem] font-black text-white whitespace-nowrap overflow-hidden text-ellipsis text-left">{team2.name}</div>
                         </div>
@@ -159,41 +161,6 @@
                 const slotIndex = state.activeSlot - 1;
                 setState(prevState => ({ ...prevState, lineup: prevState.lineup.map((s, i) => i === slotIndex ? { ...s, [side]: s[side] === value ? '' : value } : s) }));
             }, [state.activeSlot, setState]);
-
-            const handleCopyUrl = () => {
-                const params = new URLSearchParams();
-                const activePair = state.lineup[state.activeSlot - 1] || {};
-                const team1 = state.rosterHome.find(p => p.name === activePair.h) || { name: activePair.h || '', race: '' };
-                const team2 = state.rosterAway.find(p => p.name === activePair.a) || { name: activePair.a || '', race: '' };
-
-                const stateToEncode = { ...state };
-                delete stateToEncode.rosterHome;
-                delete stateToEncode.rosterAway;
-                delete stateToEncode.lineup;
-
-                Object.entries(stateToEncode).forEach(([key, value]) => {
-                     if (typeof value === 'object' && value !== null) {
-                        params.set(key, JSON.stringify(value));
-                    } else if (value !== '' && value !== null && value !== undefined) {
-                        params.set(key, value);
-                    }
-                });
-                
-                params.set('t1', team1.name);
-                params.set('r1', team1.race);
-                params.set('t2', team2.name);
-                params.set('r2', team2.race);
-                params.set('spL', activePair.spL || '');
-                params.set('spR', activePair.spR || '');
-                params.set('style', 'clear');
-                
-                const obsUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-                navigator.clipboard.writeText(obsUrl).then(() => {
-                    alert('OBS용 URL이 복사되었습니다!');
-                }, () => {
-                    alert('URL 복사에 실패했습니다.');
-                });
-            };
             
             return (
                 <div className="fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300" style={{opacity:isVisible?1:0, pointerEvents:isVisible?'auto':'none'}}>
@@ -333,10 +300,6 @@
                             <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, sets:''}))}>Clear</button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
-                        <label>OBS URL 복사</label>
-                        <button className="bg-green-600 text-white font-bold px-3 py-2 rounded-md" onClick={handleCopyUrl}>복사하기</button>
-                    </div>
                 </div>
             );
         });
@@ -348,23 +311,25 @@
             theme: 'protoss', style: 'sc1', series: 'Bo5', sg: 'strong', c1: '#e35a5a', c2: '#3bd6ff', s1: 0, s2: 0, sets: '', l1: '', l2: '', w: '', y: '', rosterHome: [], rosterAway: [], lineup: Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })), activeSlot: 1, overlays: { T: '', P: '', Z: '', opacity: 0.12, mode: 'color' }, icons: { T: '', P: '', Z: '' }, scale: 1,
           });
           
+          const room = React.useMemo(() => new URLSearchParams(window.location.search).get('room') || 'default-room', []);
+
           React.useEffect(() => {
             const qs = new URLSearchParams(window.location.search);
-            const isAdminMode = qs.get('admin') === 'true' || !(window.location.host.includes('github.io') || window.location.host.includes('netlify.app'));
+            const isAdminMode = qs.get('admin') === 'true';
             setIsAdmin(isAdminMode);
             setPanelOpen(isAdminMode);
 
             if (qs.get('style') === 'clear') {
               document.body.classList.add('transparent-mode');
             }
-            
-            if (!isAdminMode) {
-                const newState = {};
-                for (let [key, value] of qs.entries()) {
-                    try { newState[key] = JSON.parse(value); } catch (e) { newState[key] = value; }
-                }
-                setState(prev => ({...prev, ...newState}));
 
+            if (!isAdminMode && db) {
+                const unsub = db.collection('scoreboards').doc(room).onSnapshot(doc => {
+                    if (doc.exists) {
+                        setState(doc.data());
+                    }
+                });
+                return () => unsub();
             } else {
                 const lineup = loadJSON(LINEUP_KEY, Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })));
                 const rosterHome = loadJSON(RHOME_KEY, []);
@@ -374,7 +339,7 @@
                 const icons = loadJSON(ICON_KEY, { T: '', P: '', Z: '' });
                 setState(prevState => ({ ...prevState, lineup, rosterHome, rosterAway, activeSlot, overlays, icons }));
             }
-          }, []);
+          }, [isAdmin, room]);
 
           React.useEffect(() => {
             if (isAdmin) {
@@ -384,8 +349,11 @@
               localStorage.setItem(ACTIVE_KEY, String(state.activeSlot));
               saveJSON(OV_KEY, state.overlays);
               saveJSON(ICON_KEY, state.icons);
+              if (db) {
+                db.collection('scoreboards').doc(room).set(state);
+              }
             }
-          }, [state, isAdmin]);
+          }, [state, isAdmin, room]);
 
           return (
             <div className={`font-sans text-white ${isAdmin ? 'bg-gray-900 min-h-screen' : ''}`}>
