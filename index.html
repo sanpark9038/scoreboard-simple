@@ -1,6 +1,637 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freekshot Scoreboard — Test Deploy</title>
+  <!-- Tailwind (runtime CDN) for quick no-build preview -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* page bg only for preview */
+    html,body{height:100%;background:#0a0f14;color:#e9f1ff}
+  </style>
+  <!-- React 18 UMD + Babel (for in-browser JSX transpile) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Firebase (for cross‑LAN realtime without your own server) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react">
+    // --- view-mode detection for OBS/Viewer ---
+    const __qs = new URLSearchParams(location.search);
+    // also read hash for apps that strip query (?view=1) like some overlay browsers
+    const __hash = (location.hash || '').toLowerCase();
+    const __hashParams = new URLSearchParams(__hash.startsWith('#') ? __hash.slice(1) : __hash);
+    const __isViewFlag = (
+      __qs.has('view') ||
+      __qs.get('view')==='1' || __qs.get('view')==='true' || __qs.get('mode')==='view' ||
+      __hash.includes('view') ||
+      __hashParams.get('view')==='1' || __hashParams.get('mode')==='view'
+    );
+    window.__IS_VIEW = __isViewFlag;
+    // --- simple realtime sync (same browser) via BroadcastChannel ---
+    window.__BC_ENABLED = 'BroadcastChannel' in window;
+    window.__BC = window.__BC_ENABLED ? new BroadcastChannel('fs-sync-v1') : null;
+    if(window.__IS_VIEW){
+      // make page fully transparent in viewer mode (stronger enforcement for some overlay browsers)
+      document.documentElement.style.setProperty('background','transparent','important');
+      document.body.style.setProperty('background','transparent','important');
+      document.body.style.setProperty('background-color','transparent','important');
+    }
+
+    // --- WebSocket (LAN sync across different PCs) ---
+    const __wsParam = __qs.get('ws');
+    const __defaultWS = (location.protocol==='https:'? 'wss://':'ws://') + (location.hostname||'localhost') + ':8081';
+    window.__WS_URL = __wsParam || __defaultWS;
+    window.__WS = null; window.__WS_ONSTATE = null; window.__WS_READY = false;
+    function wsConnect(){
+      try{
+        if(window.__WS) try{ window.__WS.close(); }catch(_){ }
+        const ws = new WebSocket(window.__WS_URL);
+        window.__WS = ws; window.__WS_READY=false;
+        ws.onopen = ()=>{
+          window.__WS_READY=true;
+          try{
+            const role = !window.__IS_VIEW ? 'controller' : 'viewer';
+            ws.send(JSON.stringify({t:'hello', role}));
+          }catch(_){ }
+        };
+        ws.onmessage = (ev)=>{
+          try{
+            const msg = JSON.parse(ev.data);
+            if(msg.t==='state' && msg.state && window.__IS_VIEW){ if(window.__WS_ONSTATE) window.__WS_ONSTATE(msg.state); }
+            if(msg.t==='ping'){ try{ ws.send(JSON.stringify({t:'pong'})); }catch(_){ } }
+          }catch(e){ console.warn('WS message parse error', e); }
+        };
+        ws.onclose = ()=>{ window.__WS_READY=false; setTimeout(wsConnect, 1500); };
+        ws.onerror = ()=>{ try{ ws.close(); }catch(_){ } };
+      }catch(e){ console.warn('WS connect error', e); setTimeout(wsConnect, 2500); }
+    }
+    // try connect regardless of mode (controller/viewer)
+    try{ wsConnect(); }catch(_){ }
+
+    // --- Firebase (cloud realtime across different networks) ---
+    // 1) Replace the placeholder below with your Firebase Web App config
+    // window.__FB_CONFIG = { apiKey:"...", authDomain:"...", projectId:"...", appId:"..." };
+    window.__FB_CONFIG = window.__FB_CONFIG || null; // keep null until you paste your config
+    const __room = __qs.get('room') || null; // e.g., ?room=match123
+    window.__FIREBASE_ENABLED = !!(window.firebase && window.__FB_CONFIG);
+    if(window.__FIREBASE_ENABLED){
+      firebase.initializeApp(window.__FB_CONFIG);
+      window.__DB = firebase.firestore();
+    }
+    function cloudSubscribe(roomId, onState){
+      if(!window.__FIREBASE_ENABLED || !roomId) return ()=>{};
+      const ref = window.__DB.collection('rooms').doc(roomId);
+      return ref.onSnapshot(snap=>{ const d=snap.data(); if(d && d.state) onState(d.state); });
+    }
+    let __publishTimer=null;
+    function cloudPublish(roomId, state){
+      if(!window.__FIREBASE_ENABLED || !roomId) return;
+      clearTimeout(__publishTimer);
+      __publishTimer=setTimeout(()=>{
+        const ref = window.__DB.collection('rooms').doc(roomId);
+        ref.set({ state, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(()=>{});
+      }, 60); // small debounce to reduce writes
+    }
+
+    const THEMES = {
+      terran: '#ffcc66',
+      protoss: '#3bd6ff',
+      zerg: '#622884',
+    };
+
+    const RACE_COLORS = {
+      T: '#0779b3',
+      P: '#e8cd04',
+      Z: '#622884',
+    };
+
+    // localStorage keys
+    const LINEUP_KEY = 'fs_lineup_v2';
+    const RHOME_KEY = 'fs_roster_home_v2';
+    const RAWAY_KEY = 'fs_roster_away_v2';
+    const ACTIVE_KEY = 'fs_active_slot_v2';
+    const OV_KEY = 'fs_overlay_urls_v1';
+    const ICON_KEY = 'fs_race_icons_v1';
+
+    const loadJSON = (key, def)=>{ try{ const t=localStorage.getItem(key); return t? JSON.parse(t): def; }catch(e){ console.error('load',key,e); return def; } };
+    const saveJSON = (key, val)=>{ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){ console.error('save',key,e); } };
+
+    const Scoreboard = ({ state }) => {
+      const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
+      const currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
+      const team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
+      const team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
+
+      const boardStyle = {
+        '--accent': THEMES[theme],
+        '--c1': c1,
+        '--c2': c2,
+        '--ov': overlays.opacity,
+        minWidth: '520px',
+        maxWidth: '960px',
+        ...(w && { minWidth: 'unset', maxWidth: 'unset', width: /vw|%|px$/.test(w) ? w : `${w}px` }),
+      };
+
+      // Fallback-friendly gradient for wing accents (color-mix may not be supported in OBS/CEF)
+      const wingGradient = (color)=>{
+        try{
+          if(typeof CSS!== 'undefined' && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red 50%, transparent)')){
+            return `linear-gradient(180deg, color-mix(in srgb,${color} 85%,transparent), color-mix(in srgb,${color} 35%,transparent))`;
+          }
+        }catch(_){ }
+        return `linear-gradient(180deg, ${color}, transparent)`;
+      };
+
+      const team1NameRef = React.useRef(null);
+      const team2NameRef = React.useRef(null);
+      React.useEffect(()=>{
+        const fit = (ref)=>{
+          if(!ref.current) return;
+          ref.current.style.fontSize='';
+          const parentW = ref.current.parentElement.offsetWidth;
+          let size = parseFloat(getComputedStyle(ref.current).fontSize);
+          while(ref.current.scrollWidth>parentW && size>10){ size-=1; ref.current.style.fontSize=size+'px'; }
+        };
+        fit(team1NameRef); fit(team2NameRef);
+      },[team1.name, team2.name, w]);
+
+      const normalizeSets = (s)=>{ if(!s) return []; return s.toUpperCase().replace(/\s+/g,'').split('').map(ch=> ch==='L'||ch==='1'?'L':(ch==='R'||ch==='2'?'R':null)).filter(Boolean); };
+      const getGlowClass = (glow)=> `series-glow--${glow||'strong'}`;
+
+      // Safer overlay/icon/color handling
+      const leftOverlayUrl = (overlays && team1.race && overlays[team1.race]) || '';
+      const rightOverlayUrl = (overlays && team2.race && overlays[team2.race]) || '';
+      const overlayBlend = overlays && typeof overlays.mode==='string' && overlays.mode.includes('screen') ? 'screen' : 'normal';
+      const overlayFilter = overlays && typeof overlays.mode==='string' && overlays.mode.includes('mono') ? 'grayscale(1) brightness(1.15)' : 'none';
+      const raceColorLeft = RACE_COLORS[team1.race] || '#94a3b8';
+      const raceColorRight = RACE_COLORS[team2.race] || '#94a3b8';
+
+      return (
+        <>
+          <style>{`
+            .board{min-width:520px;max-width:960px;pointer-events:auto;position:relative;padding:10px 16px;border-radius:20px;display:flex;flex-direction:column;align-items:center;color:#e9f1ff;font-family:Segoe UI,Roboto,Helvetica,Arial,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
+            .sc1{background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,.46));border:1px solid rgba(59,214,255,.35);box-shadow:inset 0 0 0 1px rgba(59,214,255,.12),0 8px 22px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(2px)}
+            .clear{background:transparent;border:none;box-shadow:none;backdrop-filter:none}
+            .solid{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,.18);backdrop-filter:none}
+            .glass{background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,.15);backdrop-filter:saturate(140%) blur(6px)}
+            .sc1:before,.sc1:after{content:"";position:absolute;height:3px;left:12px;right:12px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.9;pointer-events:none}
+            .sc1:before{top:4px}.sc1:after{bottom:4px}
+            .wing{position:absolute;top:6px;bottom:6px;width:10px;pointer-events:none;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6))}
+            .wing.left{left:-8px;clip-path:polygon(0 0,100% 8px,100% calc(100% - 8px),0 100%)}
+            .wing.right{right:-8px;clip-path:polygon(100% 0,0 8px,0 calc(100% - 8px),100% 100%)}
+            .title .pill.series-glow--soft{ text-shadow:0 0 4px var(--accent, #3bd6ff),0 0 10px var(--accent, #3bd6ff) }
+            .title .pill.series-glow--medium{ text-shadow:0 0 6px var(--accent, #3bd6ff),0 0 16px var(--accent, #3bd6ff) }
+            .title .pill.series-glow--strong{ text-shadow:0 0 8px var(--accent, #3bd6ff),0 0 22px var(--accent, #3bd6ff) }
+            .title .pill.series-glow--neon{ text-shadow:0 0 10px var(--accent, #3bd6ff),0 0 28px var(--accent, #3bd6ff),0 0 42px var(--accent, #3bd6ff) }
+            .logo{border:1px solid; border-radius:10px;background:#0b0e12;position:relative;overflow:hidden;box-shadow:inset 0 0 10px rgba(59,214,255,.15)}
+            .logo img{filter:brightness(1.75) contrast(1.1)}
+            .team{text-shadow:0 0 6px rgba(0,214,255,.25)}
+            .vs:before{content:"";position:absolute;inset:0;border:1px solid rgba(59,214,255,.35);border-radius:6px;clip-path:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%);background:linear-gradient(180deg,rgba(59,214,255,.08),rgba(59,214,255,.02))}
+            .num{background:linear-gradient(180deg,rgba(0,214,255,.18),rgba(0,214,255,.04));border:1px solid rgba(0,214,255,.38);box-shadow:inset 0 0 10px rgba(0,214,255,.25),0 2px 10px rgba(0,0,0,.35)}
+            .dot{border:1px solid rgba(0,214,255,.45);background:rgba(0,214,255,.08)}
+            .dot.on{background:rgba(0,214,255,.9)}
+            .race-overlay{position:absolute;top:0;bottom:0;width:40%;opacity:var(--ov,0.12);filter:var(--ovFilter, none);mix-blend-mode:var(--ovBlend, normal);pointer-events:none;background-position:center;background-size:85% auto;background-repeat:no-repeat;z-index:1}
+            .race-overlay.left{left:-4px}
+            .race-overlay.right{right:-4px;transform:scaleX(-1)}
+            .race-box{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:5px 12px;border-radius:999px;background:rgba(15,20,30,.5);border:1px solid rgba(255,255,255,.15);backdrop-filter:blur(4px);box-shadow:inset 0 0 8px rgba(0,0,0,.35)}
+            .race-box span{font-size:1.3rem;line-height:1}
+          `}</style>
+
+          <div className={`board ${style}`} style={boardStyle}>
+            <i className="wing left" style={{ background: wingGradient(c1) }} aria-hidden="true"></i>
+            <i className="wing right" style={{ background: wingGradient(c2) }} aria-hidden="true"></i>
+
+            {leftOverlayUrl ? (
+              <div className="race-overlay left" style={{ backgroundImage: `url('${leftOverlayUrl}')`, mixBlendMode: overlayBlend, filter: overlayFilter }} aria-hidden="true"></div>
+            ) : null}
+            {rightOverlayUrl ? (
+              <div className="race-overlay right" style={{ backgroundImage: `url('${rightOverlayUrl}')`, mixBlendMode: overlayBlend, filter: overlayFilter }} aria-hidden="true"></div>
+            ) : null}
+
+            <div className="topbar w-full grid grid-cols-[1fr_auto_1fr] items-center mb-1.5 relative z-10">
+              <div className="flex justify-start">
+                {state.l1 ? (
+                  <div className="logo w-14 h-14" style={{ borderColor: c1 }}>
+                    <img src={state.l1} alt="Logo 1" className="w-full h-full object-contain" />
+                  </div>
+                ) : null}
+              </div>
+              <div className="title text-xs uppercase font-semibold text-gray-400 tracking-widest flex items-center justify-center gap-2">
+                <span className={`pill px-2 py-1 rounded-full border text-white text-2xl font-black bg-gradient-to-b from-blue-400/20 to-blue-400/10 shadow-inner shadow-blue-400/40 ${getGlowClass(sg)}`} style={{borderColor: 'var(--accent)'}}>
+                  {series}
+                </span>
+              </div>
+              <div className="flex justify-end">
+                {state.l2 ? (
+                  <div className="logo w-14 h-14" style={{ borderColor: c2 }}>
+                    <img src={state.l2} alt="Logo 2" className="w-full h-full object-contain" />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="scoreline w-full flex justify-center items-center gap-3 relative z-10">
+              <div className="flex items-center justify-end gap-2 flex-1 min-w-0">
+                <div ref={team1NameRef} className="team text-[1.625rem] font-black text-white whitespace-nowrap overflow-hidden text-ellipsis text-right">{team1.name || ''}</div>
+                <div className="race-box">
+                  <span className="font-bold" style={{color: raceColorLeft}}>{team1.race || ''}</span>
+                  {currentPair.spL ? <span className="font-bold" style={{ color: c1 }}>{currentPair.spL}</span> : null}
+                </div>
+                {icons && team1.race && icons[team1.race] ? (
+                  <img src={icons[team1.race]} alt={`${team1.race} icon`} className="w-5 h-5 opacity-95" />
+                ) : null}
+              </div>
+              <div className="num text-center text-[2rem] font-black text-white px-3 py-1 rounded-xl" style={{ border: `1px solid rgba(0,214,255,.38)` }}>
+                {s1}
+              </div>
+              <div className="vs text-sm font-black uppercase text-gray-300 tracking-widest px-2 py-1 rounded-md">VS</div>
+              <div className="num text-center text-[2rem] font-black text-white px-3 py-1 rounded-xl" style={{ border: `1px solid rgba(0,214,255,.38)` }}>
+                {s2}
+              </div>
+              <div className="flex items-center justify-start gap-2 flex-1 min-w-0">
+                {icons && team2.race && icons[team2.race] ? (
+                  <img src={icons[team2.race]} alt={`${team2.race} icon`} className="w-5 h-5 opacity-95" />
+                ) : null}
+                <div className="race-box">
+                  <span className="font-bold" style={{color: raceColorRight}}>{team2.race || ''}</span>
+                  {currentPair.spR ? <span className="font-bold" style={{ color: c2 }}>{currentPair.spR}</span> : null}
+                </div>
+                <div ref={team2NameRef} className="team text-[1.625rem] font-black text-white whitespace-nowrap overflow-hidden text-ellipsis text-left">{team2.name || ''}</div>
+              </div>
+            </div>
+
+            <div className="setsline w-full flex justify-between mt-1 relative z-10">
+              <div className="dots flex gap-1.5">{normalizeSets(sets).map((ch,i)=> <div key={i} className={`dot w-1.5 h-1.5 rounded-sm ${ch==='L'?'on':''}`}></div>)}</div>
+              <div className="dots flex gap-1.5">{normalizeSets(sets).map((ch,i)=> <div key={i} className={`dot w-1.5 h-1.5 rounded-sm ${ch==='R'?'on':''}`}></div>)}</div>
+            </div>
+          </div>
+        </>
+      );
+    };
+
+    const ControlPanel = React.memo(({ isVisible, state, setState, setPanelOpen })=>{
+      const [rosterHomeName, setRosterHomeName] = React.useState('');
+      const [rosterAwayName, setRosterAwayName] = React.useState('');
+      const [rosterHomeRace, setRosterHomeRace] = React.useState('T');
+      const [rosterAwayRace, setRosterAwayRace] = React.useState('P');
+      const [localSeries, setLocalSeries] = React.useState(state.series);
+      React.useEffect(()=> setLocalSeries(state.series), [state.series]);
+
+      const handleFilePicker = (cb)=>{ const i=document.createElement('input'); i.type='file'; i.accept='image/*'; i.onchange=(e)=>{ const f=e.target.files?.[0]; if(f) cb(URL.createObjectURL(f)); i.remove(); }; i.click(); };
+
+      const handleAddPlayer = (side)=>{
+        const name = (side==='home'? rosterHomeName: rosterAwayName).trim();
+        const race = side==='home'? rosterHomeRace: rosterAwayRace;
+        if(!name) return;
+        const key = side==='home'? 'rosterHome':'rosterAway';
+        const list = state[key];
+        if(list.some(p=>p.name===name)) return;
+        setState(prev=>({...prev, [key]: [...list, {name, race}] }));
+        side==='home'? setRosterHomeName('') : setRosterAwayName('');
+      };
+
+      const handleBulkClear = (side)=>{
+        setState(prev=> ({...prev, [side==='home'? 'rosterHome':'rosterAway']: []}));
+      };
+
+      const applySlot = (slot)=> setState(prev=> ({...prev, activeSlot: slot}));
+
+      const handleLineupChange = (slotIndex, side, name)=>{
+        setState(prev=>{ const newLineup = prev.lineup.map((slot,i)=> i===slotIndex ? {...slot,[side]:name}: slot); return {...prev, lineup:newLineup}; });
+      };
+      const handleClearLineupSlot = (slotIndex)=>{
+        setState(prev=>{ const newLineup = prev.lineup.map((slot,i)=> i===slotIndex ? {...slot, h:'', a:''}: slot); return {...prev, lineup:newLineup}; });
+      };
+      const handleSpClick = (side, value)=>{
+        const slotIndex = state.activeSlot - 1;
+        setState(prev=>{ const newLineup = prev.lineup.map((slot,i)=>{
+          if(i!==slotIndex) return slot; const cur=slot[side==='spL'?'spL':'spR']; return {...slot, [side]: (String(cur)===String(value))? '': value};
+        }); return {...prev, lineup:newLineup}; });
+      };
+
+      return (
+        <div className="fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300" style={{opacity:isVisible?1:0, pointerEvents:isVisible?'auto':'none'}}>
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center">Overlay Controls
+            <button className="absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400" onClick={()=>setPanelOpen(false)}>✕</button>
+          </h3>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>타이틀</label>
+            <input className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={localSeries} onChange={(e)=>setLocalSeries(e.target.value)} onBlur={()=> setState(prev=>({...prev, series: localSeries})) } />
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>Series Glow</label>
+            <select className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.sg} onChange={(e)=> setState(prev=>({...prev, sg: e.target.value}))}>
+              <option value="soft">Soft</option>
+              <option value="medium">Medium</option>
+              <option value="strong">Strong</option>
+              <option value="neon">Neon</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>좌/우 색</label>
+            <div className="flex gap-2">
+              <input type="color" className="p-1 rounded-md" value={state.c1} onInput={(e)=> setState(prev=>({...prev, c1:e.target.value}))} />
+              <input type="color" className="p-1 rounded-md" value={state.c2} onInput={(e)=> setState(prev=>({...prev, c2:e.target.value}))} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>Style</label>
+            <select className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.style} onChange={(e)=> setState(prev=>({...prev, style:e.target.value}))}>
+              <option value="sc1">sc1</option>
+              <option value="clear">clear</option>
+              <option value="glass">glass</option>
+              <option value="solid">solid</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>Width</label>
+            <input className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="880 or 50vw" value={state.w} onChange={(e)=> setState(prev=>({...prev, w:e.target.value}))} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>Top</label>
+            <input className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="20 or 4vh" value={state.y} onChange={(e)=> setState(prev=>({...prev, y:e.target.value}))} />
+          </div>
+
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">로스터 빠른 추가</h3>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>우리팀 추가</label>
+            <div className="flex gap-2 items-center">
+              <input id="add_h_name" placeholder="이름" className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md min-w-[160px]" value={rosterHomeName} onChange={(e)=> setRosterHomeName(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') handleAddPlayer('home'); }} />
+              <div className="flex gap-1">
+                {['T','P','Z'].map(r=> (
+                  <button key={r} className={`px-2 py-1 rounded-md font-bold border ${rosterHomeRace===r? 'bg-blue-400 text-gray-900 border-blue-400':'text-gray-400 border-gray-700'}`} onClick={()=> setRosterHomeRace(r)}>{r}</button>
+                ))}
+              </div>
+              <button className="bg-blue-400 text-gray-900 font-bold px-3 py-2 rounded-md" onClick={()=> handleAddPlayer('home')}>추가</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>상대팀 추가</label>
+            <div className="flex gap-2 items-center">
+              <input id="add_a_name" placeholder="이름" className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md min-w-[160px]" value={rosterAwayName} onChange={(e)=> setRosterAwayName(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter') handleAddPlayer('away'); }} />
+              <div className="flex gap-1">
+                {['T','P','Z'].map(r=> (
+                  <button key={r} className={`px-2 py-1 rounded-md font-bold border ${rosterAwayRace===r? 'bg-blue-400 text-gray-900 border-blue-400':'text-gray-400 border-gray-700'}`} onClick={()=> setRosterAwayRace(r)}>{r}</button>
+                ))}
+              </div>
+              <button className="bg-blue-400 text-gray-900 font-bold px-3 py-2 rounded-md" onClick={()=> handleAddPlayer('away')}>추가</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>일괄삭제</label>
+            <div className="flex gap-2">
+              <button className="bg-red-800 text-red-200 font-bold px-3 py-2 rounded-md" onClick={()=> handleBulkClear('home')}>우리팀 전체삭제</button>
+              <button className="bg-red-800 text-red-200 font-bold px-3 py-2 rounded-md" onClick={()=> handleBulkClear('away')}>상대팀 전체삭제</button>
+            </div>
+          </div>
+
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">라인업 (1–9)</h3>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>활성 슬롯</label>
+            <div className="flex gap-2 items-center">
+              <select id="active_slot" className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.activeSlot} onChange={(e)=> applySlot(parseInt(e.target.value,10))}>
+                {Array.from({length:9},(_,i)=> <option key={i} value={i+1}>{i+1}</option>)}
+              </select>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> applySlot(Math.max(1, state.activeSlot-1))}>◀ 이전</button>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> applySlot(Math.min(9, state.activeSlot+1))}>다음 ▶</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>SP(좌/우)</label>
+            <div className="flex gap-2 items-center">
+              {['1','5','7','11'].map(sp=> (
+                <button key={`spL-${sp}`} className={`px-2 py-1 rounded-md text-sm border ${state.lineup[state.activeSlot-1]?.spL===sp? 'bg-blue-400 text-gray-900':'bg-gray-800 text-white border-gray-700'}`} onClick={()=> handleSpClick('spL', sp)}>L:{sp}</button>
+              ))}
+              <span className="w-3"></span>
+              {['1','5','7','11'].map(sp=> (
+                <button key={`spR-${sp}`} className={`px-2 py-1 rounded-md text-sm border ${state.lineup[state.activeSlot-1]?.spR===sp? 'bg-blue-400 text-gray-900':'bg-gray-800 text-white border-gray-700'}`} onClick={()=> handleSpClick('spR', sp)}>R:{sp}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border border-gray-700 rounded-md p-1 my-2 max-h-64 overflow-auto">
+            {state.lineup.map((pair, index)=> (
+              <div key={index} className="grid grid-cols-[28px_1fr_24px_1fr_auto_auto] gap-1 items-center p-1 border-b border-gray-700 last:border-b-0">
+                <span className="text-center opacity-75">{index+1}</span>
+                <select className="bg-gray-800 border border-gray-700 text-white p-1 rounded-md text-sm" value={pair.h || ''} onChange={(e)=> handleLineupChange(index,'h', e.target.value)}>
+                  <option value="">-</option>
+                  {state.rosterHome.map((p,i)=>(<option key={i} value={p.name}>{p.name} ({p.race})</option>))}
+                </select>
+                <span className="text-center opacity-70 text-sm">vs</span>
+                <select className="bg-gray-800 border border-gray-700 text-white p-1 rounded-md text-sm" value={pair.a || ''} onChange={(e)=> handleLineupChange(index,'a', e.target.value)}>
+                  <option value="">-</option>
+                  {state.rosterAway.map((p,i)=>(<option key={i} value={p.name}>{p.name} ({p.race})</option>))}
+                </select>
+                <button className="px-2 py-1 rounded-md text-xs bg-gray-800 border border-gray-700 text-white" onClick={()=> applySlot(index+1)}>적용</button>
+                <button className="px-2 py-1 rounded-md text-xs bg-gray-800 border border-gray-700 text-white" onClick={()=> handleClearLineupSlot(index)}>지움</button>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">스코어 / 세트</h3>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>Score 1</label>
+            <div className="flex gap-2 items-center">
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, s1: Math.max(0, p.s1-1)}))}>-</button>
+              <input type="number" min="0" className="w-[70px] bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.s1} onChange={(e)=> setState(p=>({...p, s1: parseInt(e.target.value,10)||0}))} />
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, s1: p.s1+1}))}>+</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>Score 2</label>
+            <div className="flex gap-2 items-center">
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, s2: Math.max(0, p.s2-1)}))}>-</button>
+              <input type="number" min="0" className="w-[70px] bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.s2} onChange={(e)=> setState(p=>({...p, s2: parseInt(e.target.value,10)||0}))} />
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, s2: p.s2+1}))}>+</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>SETS (L/R)</label>
+            <div className="flex gap-2 items-center">
+              <input id="i_sets" placeholder="예: LRRLL" className="flex-1 bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.sets} onChange={(e)=> setState(p=>({...p, sets:e.target.value}))} />
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, sets:(p.sets||'')+'L'}))}>L</button>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, sets:(p.sets||'')+'R'}))}>R</button>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, sets:(p.sets||'').slice(0,-1)}))}>⌫</button>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, sets:''}))}>Clear</button>
+            </div>
+          </div>
+
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">종족 오버레이 (T/P/Z)</h3>
+          {['T','P','Z'].map(race=> (
+            <div key={race} className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+              <label>{race} 오버레이</label>
+              <div className="flex gap-2 items-center">
+                <input className="flex-1 bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="URL" value={state.overlays[race]||''} onChange={(e)=> setState(p=>({...p, overlays:{...p.overlays,[race]:e.target.value}}))} />
+                <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> handleFilePicker(url=> setState(p=>({...p, overlays:{...p.overlays,[race]:url}})))}>파일</button>
+                <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, overlays:{...p.overlays,[race]:''}}))}>Clear</button>
+              </div>
+            </div>
+          ))}
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>오버레이 투명도</label>
+            <input type="range" min="0" max="1" step="0.01" value={state.overlays.opacity} onChange={(e)=> setState(p=>({...p, overlays:{...p.overlays, opacity: parseFloat(e.target.value)}}))} />
+          </div>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>오버레이 모드</label>
+            <select className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={state.overlays.mode} onChange={(e)=> setState(p=>({...p, overlays:{...p.overlays, mode:e.target.value}}))}>
+              <option value="color">원본색</option>
+              <option value="screen-color">스크린(컬러)</option>
+              <option value="screen-mono">스크린(모노)</option>
+            </select>
+          </div>
+
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">종족 아이콘 (T/P/Z)</h3>
+          {['T','P','Z'].map(race=> (
+            <div key={race} className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+              <label>{race} 아이콘</label>
+              <div className="flex gap-2 items-center">
+                <input className="flex-1 bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="URL" value={state.icons[race]||''} onChange={(e)=> setState(p=>({...p, icons:{...p.icons,[race]:e.target.value}}))} />
+                <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> handleFilePicker(url=> setState(p=>({...p, icons:{...p.icons,[race]:url}})))}>파일</button>
+                <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, icons:{...p.icons,[race]:''}}))}>Clear</button>
+              </div>
+            </div>
+          ))}
+
+          <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">팀 로고 (좌/우)</h3>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>좌 로고</label>
+            <div className="flex gap-2 items-center">
+              <input className="flex-1 bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="URL" value={state.l1} onChange={(e)=> setState(p=>({...p, l1:e.target.value}))} />
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> handleFilePicker(url=> setState(p=>({...p, l1:url})))}>파일</button>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, l1:''}))}>Clear</button>
+            </div>
+          </div>
+          <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
+            <label>우 로고</label>
+            <div className="flex gap-2 items-center">
+              <input className="flex-1 bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="URL" value={state.l2} onChange={(e)=> setState(p=>({...p, l2:e.target.value}))} />
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> handleFilePicker(url=> setState(p=>({...p, l2:url})))}>파일</button>
+              <button className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" onClick={()=> setState(p=>({...p, l2:''}))}>Clear</button>
+            </div>
+          </div>
+        </div>
+      );
+    });
+
+    function App(){
+      const isView = !!window.__IS_VIEW;
+      const [panelOpen, setPanelOpen] = React.useState(!isView);
+      const [state, setState] = React.useState({
+        theme:'protoss', style:'sc1', series:'Bo5', sg:'strong', c1:'#e35a5a', c2:'#3bd6ff', s1:0, s2:0, sets:'', l1:'', l2:'', w:'', y:'', rosterHome:[], rosterAway:[], lineup:Array.from({length:9},()=>({h:'',a:'',spL:'',spR:''})), activeSlot:1, overlays:{T:'',P:'',Z:'',opacity:0.12,mode:'color'}, icons:{T:'',P:'',Z:''}, scale:1,
+      });
+
+      // init from localStorage + query
+      React.useEffect(()=>{
+        const lineup = loadJSON(LINEUP_KEY, Array.from({length:9},()=>({h:'',a:'',spL:'',spR:''})));
+        const rosterHome = loadJSON(RHOME_KEY, []);
+        const rosterAway = loadJSON(RAWAY_KEY, []);
+        const activeSlot = parseInt(localStorage.getItem(ACTIVE_KEY)||'1',10);
+        const overlays = loadJSON(OV_KEY, {T:'',P:'',Z:'',opacity:0.12,mode:'color'});
+        const icons = loadJSON(ICON_KEY, {T:'',P:'',Z:''});
+        const qs = new URLSearchParams(window.location.search);
+        const queryTheme = qs.get('theme') || 'protoss';
+        const queryStyle = qs.get('style') || 'sc1';
+        const queryW = qs.get('w') || '';
+        const queryY = qs.get('y') || '';
+        const queryScale = parseFloat(qs.get('scale') || '1');
+        const querySeries = qs.get('series') || 'Bo5';
+        const querySG = qs.get('sg') || 'strong';
+        document.documentElement.style.setProperty('--accent', THEMES[queryTheme] || THEMES.protoss);
+        setState(prev=> ({...prev, rosterHome, rosterAway, lineup, activeSlot, overlays, icons, theme:queryTheme, style:queryStyle, w:queryW, y:queryY, scale:queryScale, series:querySeries, sg:querySG }));
+      },[]);
+
+      // persist to localStorage
+      React.useEffect(()=>{
+        saveJSON(LINEUP_KEY, state.lineup);
+        saveJSON(RHOME_KEY, state.rosterHome);
+        saveJSON(RAWAY_KEY, state.rosterAway);
+        localStorage.setItem(ACTIVE_KEY, String(state.activeSlot));
+        saveJSON(OV_KEY, state.overlays);
+        saveJSON(ICON_KEY, state.icons);
+      },[state]);
+
+      // broadcast state changes to other tabs (same browser)
+      React.useEffect(()=>{
+        if(!isView && window.__BC){
+          window.__BC.postMessage({ t:'fs-sync', state});
+        }
+      },[state,isView]);
+
+      // send state via WebSocket to bridge (cross-PC realtime)
+      React.useEffect(()=>{
+        if(!isView && window.__WS && window.__WS.readyState===1){
+          try{ window.__WS.send(JSON.stringify({t:'state', state})); }catch(e){ }
+        }
+      },[state,isView]);
+
+      // controller → Firebase (cross‑LAN realtime)
+      React.useEffect(()=>{
+        if(!isView && __room){ cloudPublish(__room, state); }
+      },[state,isView]);
+
+      // viewer listens and applies updates in realtime
+      React.useEffect(()=>{
+        if(isView && window.__BC){
+          const handler = (e)=>{
+            const data = e?.data; if(data?.t==='fs-sync' && data.state){ setState(prev=> ({...prev, ...data.state})); }
+          };
+          window.__BC.onmessage = handler;
+          return ()=>{ window.__BC.onmessage = null; };
+        }
+      },[isView]);
+
+      // viewer: receive state from WebSocket bridge
+      React.useEffect(()=>{
+        if(isView){
+          window.__WS_ONSTATE = (s)=> setState(prev=> ({...prev, ...s}));
+          return ()=>{ window.__WS_ONSTATE = null; };
+        }
+      },[isView]);
+
+      // viewer: subscribe Firebase room
+      React.useEffect(()=>{
+        if(isView && __room){
+          const unsub = cloudSubscribe(__room, (s)=> setState(prev=> ({...prev, ...s})) );
+          return ()=>{ try{ unsub && unsub(); }catch(_){ } };
+        }
+      },[isView]);
+
+      return (
+        <div className={`font-sans text-white ${isView? 'min-h-0 p-0':'min-h-screen p-8'} flex`} style={{background: isView ? 'transparent' : undefined}}>
+          <div className="fixed" style={{top: state.y || '20px', left: '50%', transform: `translateX(-50%) scale(${state.scale || 1})`, transformOrigin: 'top center'}}>
+            <Scoreboard state={state} />
+          </div>
+
+          {!isView && (<button className="fixed top-4 right-4 z-[2147483650] w-9 h-9 rounded-full bg-blue-400 text-gray-900 font-bold flex items-center justify-center border-none shadow-lg cursor-pointer" onClick={()=> setPanelOpen(!panelOpen)}>⚙</button>)}
+
+          {!isView && (<ControlPanel isVisible={panelOpen} state={state} setState={setState} setPanelOpen={setPanelOpen} />)}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Freekshot Scoreboard</title>
