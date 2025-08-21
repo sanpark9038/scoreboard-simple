@@ -9,6 +9,9 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <style>
         body, html, #root { margin: 0; padding: 0; font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif; }
         .transparent-mode, .transparent-mode #root { background-color: transparent !important; }
@@ -46,18 +49,31 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // --- Firebase 설정 ---
+        // 1. 아래 firebaseConfig 객체에 본인의 Firebase 웹 앱 설정을 붙여넣으세요.
+        const firebaseConfig = {
+          apiKey: "YOUR_API_KEY",
+          authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+          projectId: "YOUR_PROJECT_ID",
+          storageBucket: "YOUR_PROJECT_ID.appspot.com",
+          messagingSenderId: "YOUR_SENDER_ID",
+          appId: "YOUR_APP_ID"
+        };
+        
+        let db;
+        try {
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.firestore();
+        } catch (e) {
+            console.error("Firebase 초기화 실패. 설정값을 확인해주세요.", e);
+            alert("Firebase 설정이 올바르지 않습니다. 코드를 확인해주세요.");
+        }
+
         const THEMES = { terran: '#ffcc66', protoss: '#3bd6ff', zerg: '#622884' };
         const RACE_COLORS = { T: '#0779b3', P: '#e8cd04', Z: '#622884' };
-        const LINEUP_KEY = 'fs_lineup_v2';
-        const RHOME_KEY = 'fs_roster_home_v2';
-        const RAWAY_KEY = 'fs_roster_away_v2';
-        const ACTIVE_KEY = 'fs_active_slot_v2';
-        const OV_KEY = 'fs_overlay_urls_v1';
-        const ICON_KEY = 'fs_race_icons_v1';
-
-        const loadJSON = (key, def) => { try { const t = localStorage.getItem(key); return t ? JSON.parse(t) : def; } catch (e) { return def; } };
-        const saveJSON = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { console.error(e); } };
-
+        
         const Scoreboard = ({ state }) => {
             const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
             const currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
@@ -147,43 +163,6 @@
                 const slotIndex = state.activeSlot - 1;
                 setState(prevState => ({ ...prevState, lineup: prevState.lineup.map((s, i) => i === slotIndex ? { ...s, [side]: s[side] === value ? '' : value } : s) }));
             }, [state.activeSlot, setState]);
-
-            const handleCopyUrl = () => {
-                const params = new URLSearchParams();
-                const tempState = {...state};
-                // URL에 포함시키지 않을 상태값들
-                delete tempState.rosterHome; 
-                delete tempState.rosterAway;
-                delete tempState.lineup;
-
-                Object.entries(tempState).forEach(([key, value]) => {
-                     if (typeof value === 'object' && value !== null) {
-                        params.set(key, JSON.stringify(value));
-                    } else if (value !== '' && value !== null && value !== undefined) {
-                        params.set(key, value);
-                    }
-                });
-                
-                const activePair = state.lineup[state.activeSlot - 1] || {};
-                const team1 = state.rosterHome.find(p => p.name === activePair.h) || { name: activePair.h, race: '' };
-                const team2 = state.rosterAway.find(p => p.name === activePair.a) || { name: activePair.a, race: '' };
-
-                params.set('t1', team1.name);
-                params.set('t2', team2.name);
-                params.set('r1', team1.race);
-                params.set('r2', team2.race);
-                params.set('spL', activePair.spL || '');
-                params.set('spR', activePair.spR || '');
-
-                params.set('style', 'clear');
-                
-                const obsUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-                navigator.clipboard.writeText(obsUrl).then(() => {
-                    alert('OBS용 URL이 복사되었습니다!');
-                }, () => {
-                    alert('URL 복사에 실패했습니다.');
-                });
-            };
             
             return (
                 <div className="fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300" style={{opacity:isVisible?1:0, pointerEvents:isVisible?'auto':'none'}}>
@@ -191,7 +170,7 @@
                         <button className="absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400" onClick={()=>setPanelOpen(false)}>✕</button>
                     </h3>
                     
-                    {/* Series & Style Controls */}
+                    {/* All Controls */}
                     <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
                         <label>타이틀</label>
                         <input className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" value={localSeries} onChange={(e)=>setLocalSeries(e.target.value)} onBlur={()=> setState(p=>({...p, series: localSeries})) } />
@@ -230,7 +209,6 @@
                         <input className="bg-gray-800 border border-gray-700 text-white p-2 rounded-md" placeholder="20 or 4vh" value={state.y} onChange={(e)=> setState(p=>({...p, y:e.target.value}))} />
                     </div>
 
-                    {/* Roster Controls */}
                     <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">로스터 빠른 추가</h3>
                     <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
                         <label>우리팀 추가</label>
@@ -260,7 +238,6 @@
                         </div>
                     </div>
 
-                    {/* Lineup Controls */}
                     <h3 className="text-xs uppercase font-semibold text-gray-400 tracking-widest my-4">라인업 (1–9)</h3>
                     <div className="grid grid-cols-[160px_1fr] gap-2 items-center my-1.5">
                         <label>활성 슬롯</label>
