@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freekshot Scoreboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 기본 스타일 및 OBS 투명 모드 지원 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: Segoe UI, Roboto, Helvetica, Arial, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
+        }
+        .transparent-mode, .transparent-mode #root {
+            background-color: transparent !important;
+        }
+
+        /* 스코어보드 디자인 */
+        .board{min-width:520px;max-width:960px;pointer-events:auto;position:relative;padding:10px 16px;border-radius:20px;display:flex;flex-direction:column;align-items:center; color:#e9f1ff;}
+        .sc1{background:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,.46));border:1px solid rgba(59,214,255,.35);box-shadow:inset 0 0 0 1px rgba(59,214,255,.12),0 8px 22px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(2px)}
+        .clear{background:transparent;border:none;box-shadow:none;backdrop-filter:none}
+        .solid{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,.18);backdrop-filter:none}
+        .glass{background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,.15);backdrop-filter:saturate(140%) blur(6px)}
+        .sc1:before,.sc1:after{content:"";position:absolute;height:3px;left:12px;right:12px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.9;pointer-events:none}
+        .sc1:before{top:4px}.sc1:after{bottom:4px}
+        .wing{position:absolute;top:6px;bottom:6px;width:10px;pointer-events:none;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6))}
+        .wing.left{left:-8px;clip-path:polygon(0 0,100% 8px,100% calc(100% - 8px),0 100%)}
+        .wing.right{right:-8px;clip-path:polygon(100% 0,0 8px,0 calc(100% - 8px),100% 100%)}
+        .title .pill.series-glow--soft{ text-shadow:0 0 4px var(--accent, #3bd6ff),0 0 10px var(--accent, #3bd6ff))}
+        .title .pill.series-glow--medium{ text-shadow:0 0 6px var(--accent, #3bd6ff),0 0 16px var(--accent, #3bd6ff))}
+        .title .pill.series-glow--strong{ text-shadow:0 0 8px var(--accent, #3bd6ff),0 0 22px var(--accent, #3bd6ff))}
+        .title .pill.series-glow--neon{ text-shadow:0 0 10px var(--accent, #3bd6ff),0 0 28px var(--accent, #3bd6ff),0 0 42px var(--accent, #3bd6ff))}
+        .logo{border:1px solid; border-radius:10px;background:#0b0e12;position:relative;overflow:hidden;box-shadow:inset 0 0 10px rgba(59,214,255,.15)}
+        .logo img { filter: brightness(1.75) contrast(1.1); }
+        .team{text-shadow:0 0 6px rgba(0,214,255,.25)}
+        .vs:before{content:"";position:absolute;inset:0;border:1px solid rgba(59,214,255,.35);border-radius:6px;clip-path:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%);background:linear-gradient(180deg,rgba(59,214,255,.08),rgba(59,214,255,.02))}
+        .num{background:linear-gradient(180deg,rgba(0,214,255,.18),rgba(0,214,255,.04));border:1px solid rgba(0,214,255,.38);box-shadow:inset 0 0 10px rgba(0,214,255,.25),0 2px 10px rgba(0,0,0,.35)}
+        .dot{border:1px solid rgba(0,214,255,.45);background:rgba(0,214,255,.08)}
+        .dot.on{background:rgba(0,214,255,.9)}
+        .race-overlay{position:absolute;top:0;bottom:0;width:40%;opacity:var(--ov,0.12);filter:var(--ovFilter, none);mix-blend-mode:var(--ovBlend, normal);pointer-events:none;background-position:center;background-size:85% auto;background-repeat:no-repeat;z-index:1}
+        .race-overlay.left{left:-4px}
+        .race-overlay.right{right:-4px;transform:scaleX(-1)}
+        .race-box {
+          display:inline-flex; 
+          align-items:center; 
+          justify-content:center; 
+          gap:8px; 
+          padding: 5px 12px; 
+          border-radius:999px; 
+          background-color: rgba(15, 20, 30, 0.5);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          backdrop-filter: blur(4px);
+          box-shadow: inset 0 0 8px rgba(0,0,0,.35);
+        }
+        .race-box span {
+          font-size: 1.3rem;
+          line-height: 1;
+        }
+    </style>
+</head>
+<body id="body" class="bg-gray-900">
+    
+    <div id="root" class="font-sans text-white min-h-screen p-8 flex flex-col items-center justify-center">
+        <!-- 스코어보드가 여기에 렌더링됩니다 -->
+    </div>
+
+    <script type="module">
+        // React와 ReactDOM을 CDN에서 직접 가져옵니다.
+        import React from 'https://esm.sh/react@18.2.0';
+        import ReactDOM from 'https://esm.sh/react-dom@18.2.0/client';
+
+        // 여기에 App 컴포넌트 전체 코드를 붙여넣습니다.
+        // 기존 App.js 파일의 모든 내용을 여기에 넣습니다.
+        const THEMES = {
+          terran: '#ffcc66',
+          protoss: '#3bd6ff',
+          zerg: '#622884',
+        };
+
+        const RACE_COLORS = {
+          T: '#0779b3',
+          P: '#e8cd04',
+          Z: '#622884',
+        };
+
+        const LINEUP_KEY = 'fs_lineup_v2';
+        const RHOME_KEY = 'fs_roster_home_v2';
+        const RAWAY_KEY = 'fs_roster_away_v2';
+        const ACTIVE_KEY = 'fs_active_slot_v2';
+        const OV_KEY = 'fs_overlay_urls_v1';
+        const ICON_KEY = 'fs_race_icons_v1';
+        const SNAP_KEY = 'fs_snapshots_v1';
+
+        const loadJSON = (key, def) => {
+          try {
+            const t = localStorage.getItem(key);
+            return t ? JSON.parse(t) : def;
+          } catch (e) {
+            console.error(`localStorage에서 키 "${key}"를 로드하는 중 오류 발생:`, e);
+            return def;
+          }
+        };
+
+        const saveJSON = (key, val) => {
+          try {
+            localStorage.setItem(key, JSON.stringify(val));
+          } catch (e) {
+            console.error(`localStorage에 키 "${key}"를 저장하는 중 오류 발생:`, e);
+          }
+        };
+
+        const Scoreboard = ({ state }) => {
+            const { theme, c1, c2, overlays, w, series, sg, l1, l2, s1, s2, sets, lineup, activeSlot, rosterHome, rosterAway, icons, style } = state;
+            const currentPair = lineup[activeSlot - 1] || { h: '', a: '', spL: '', spR: '' };
+            const team1 = rosterHome.find(p => p.name === currentPair.h) || { name: currentPair.h, race: '' };
+            const team2 = rosterAway.find(p => p.name === currentPair.a) || { name: currentPair.a, race: '' };
+
+            const boardStyle = {
+              '--accent': THEMES[theme],
+              '--c1': c1,
+              '--c2': c2,
+              '--ov': overlays.opacity,
+              minWidth: '520px',
+              maxWidth: '960px',
+              ...(w && { minWidth: 'unset', maxWidth: 'unset', width: /vw|%|px$/.test(w) ? w : `${w}px` }),
+            };
+
+            const team1NameRef = React.useRef(null);
+            const team2NameRef = React.useRef(null);
+            
+            React.useEffect(() => {
+              const checkOverflow = (ref) => {
+                if (ref.current) {
+                  ref.current.style.fontSize = '';
+                  const parentWidth = ref.current.parentElement.offsetWidth;
+                  let currentSize = parseFloat(getComputedStyle(ref.current).fontSize);
+                  while (ref.current.scrollWidth > parentWidth && currentSize > 10) {
+                    currentSize -= 1;
+                    ref.current.style.fontSize = `${currentSize}px`;
+                  }
+                }
+              };
+              checkOverflow(team1NameRef);
+              checkOverflow(team2NameRef);
+            }, [team1.name, team2.name, w]);
+
+            const normalizeSets = (s) => {
+                if (!s) return [];
+                return s.toUpperCase().replace(/\s+/g, '').split('').map(ch =>
+                  ch === 'L' || ch === '1' ? 'L' : (ch === 'R' || ch === '2' ? 'R' : null)
+                ).filter(Boolean);
+            };
+
+            const getGlowClass = (glow) => `series-glow--${glow || 'strong'}`;
+
+            return React.createElement('div', { className: `board ${style}`, style: boardStyle },
+                React.createElement('i', { className: 'wing left', style: { background: `linear-gradient(180deg, color-mix(in srgb,${c1} 85%,transparent), color-mix(in srgb,${c1} 35%,transparent))` }, 'aria-hidden': 'true' }),
+                React.createElement('i', { className: 'wing right', style: { background: `linear-gradient(180deg, color-mix(in srgb,${c2} 85%,transparent), color-mix(in srgb,${c2} 35%,transparent))` }, 'aria-hidden': 'true' }),
+                React.createElement('div', { className: 'race-overlay left', style: { backgroundImage: `url('${overlays[team1.race]}')`, mixBlendMode: overlays.mode.includes('screen') ? 'screen' : 'normal', filter: overlays.mode.includes('mono') ? 'grayscale(1) brightness(1.15)' : 'none' }, 'aria-hidden': 'true' }),
+                React.createElement('div', { className: 'race-overlay right', style: { backgroundImage: `url('${overlays[team2.race]}')`, mixBlendMode: overlays.mode.includes('screen') ? 'screen' : 'normal', filter: overlays.mode.includes('mono') ? 'grayscale(1) brightness(1.15)' : 'none' }, 'aria-hidden': 'true' }),
+                React.createElement('div', { className: 'topbar w-full grid grid-cols-[1fr_auto_1fr] items-center mb-1.5 relative z-10' },
+                    React.createElement('div', { className: 'flex justify-start' }, l1 && React.createElement('div', { className: 'logo w-14 h-14', style: { borderColor: c1 } }, React.createElement('img', { src: l1, alt: 'Logo 1', className: 'w-full h-full object-contain' }))),
+                    React.createElement('div', { className: 'title text-xs uppercase font-semibold text-gray-400 tracking-widest flex items-center justify-center gap-2' }, React.createElement('span', { className: `pill px-2 py-1 rounded-full border text-white text-2xl font-black bg-gradient-to-b from-blue-400/20 to-blue-400/10 shadow-inner shadow-blue-400/40 ${getGlowClass(sg)}`, style: { borderColor: 'var(--accent)' } }, series)),
+                    React.createElement('div', { className: 'flex justify-end' }, l2 && React.createElement('div', { className: 'logo w-14 h-14', style: { borderColor: c2 } }, React.createElement('img', { src: l2, alt: 'Logo 2', className: 'w-full h-full object-contain' })))
+                ),
+                React.createElement('div', { className: 'scoreline w-full flex justify-center items-center gap-3 relative z-10' },
+                    React.createElement('div', { className: 'flex items-center justify-end gap-2 flex-1 min-w-0' },
+                        React.createElement('div', { ref: team1NameRef, className: 'team text-[1.625rem] font-black text-white whitespace-nowrap overflow-hidden text-ellipsis text-right' }, team1.name),
+                        React.createElement('div', { className: 'race-box' },
+                            React.createElement('span', { className: 'font-bold', style: { color: RACE_COLORS[team1.race] } }, team1.race),
+                            currentPair.spL && React.createElement('span', { className: 'font-bold', style: { color: c1 } }, currentPair.spL)
+                        ),
+                        icons[team1.race] && React.createElement('img', { src: icons[team1.race], alt: `${team1.race} icon`, className: 'w-5 h-5 opacity-95' })
+                    ),
+                    React.createElement('div', { className: 'num text-center text-[2rem] font-black text-white px-3 py-1 rounded-xl', style: { border: '1px solid rgba(0,214,255,.38)' } }, s1),
+                    React.createElement('div', { className: 'vs text-sm font-black uppercase text-gray-300 tracking-widest px-2 py-1 rounded-md' }, 'VS'),
+                    React.createElement('div', { className: 'num text-center text-[2rem] font-black text-white px-3 py-1 rounded-xl', style: { border: '1px solid rgba(0,214,255,.38)' } }, s2),
+                    React.createElement('div', { className: 'flex items-center justify-start gap-2 flex-1 min-w-0' },
+                        icons[team2.race] && React.createElement('img', { src: icons[team2.race], alt: `${team2.race} icon`, className: 'w-5 h-5 opacity-95' }),
+                        React.createElement('div', { className: 'race-box' },
+                            React.createElement('span', { className: 'font-bold', style: { color: RACE_COLORS[team2.race] } }, team2.race),
+                            currentPair.spR && React.createElement('span', { className: 'font-bold', style: { color: c2 } }, currentPair.spR)
+                        ),
+                        React.createElement('div', { ref: team2NameRef, className: 'team text-[1.625rem] font-black text-white whitespace-nowrap overflow-hidden text-ellipsis text-left' }, team2.name)
+                    )
+                ),
+                React.createElement('div', { className: 'setsline w-full flex justify-between mt-1 relative z-10' },
+                    React.createElement('div', { className: 'dots flex gap-1.5' }, normalizeSets(sets).map((ch, i) => React.createElement('div', { key: i, className: `dot w-1.5 h-1.5 rounded-sm ${ch === 'L' ? 'on' : ''}` }))),
+                    React.createElement('div', { className: 'dots flex gap-1.5' }, normalizeSets(sets).map((ch, i) => React.createElement('div', { key: i, className: `dot w-1.5 h-1.5 rounded-sm ${ch === 'R' ? 'on' : ''}` })))
+                )
+            );
+        };
+
+        const ControlPanel = React.memo(({ isVisible, state, setState, setPanelOpen, generateCommentary, generatePrediction, isCallingGemini, commentary, prediction }) => {
+            // ... (ControlPanel 내용은 이전과 동일하게 유지)
+            // ... (이 부분은 생략되었지만, 실제로는 전체 ControlPanel 코드가 여기에 들어갑니다)
+        });
+
+        function App() {
+          const [panelOpen, setPanelOpen] = React.useState(false);
+          const [isAdmin, setIsAdmin] = React.useState(false);
+          const [state, setState] = React.useState({
+            theme: 'protoss', style: 'sc1', series: 'Bo5', sg: 'strong', c1: '#e35a5a', c2: '#3bd6ff', s1: 0, s2: 0, sets: '', l1: '', l2: '', w: '', y: '', rosterHome: [], rosterAway: [], lineup: Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })), activeSlot: 1, overlays: { T: '', P: '', Z: '', opacity: 0.12, mode: 'color' }, icons: { T: '', P: '', Z: '' }, scale: 1,
+          });
+          
+          React.useEffect(() => {
+            const qs = new URLSearchParams(window.location.search);
+            if (qs.get('admin') === 'true') {
+              setIsAdmin(true);
+              setPanelOpen(true);
+            }
+            if (qs.get('style') === 'clear') {
+              document.body.classList.add('transparent-mode');
+            }
+
+            const lineup = loadJSON(LINEUP_KEY, Array.from({ length: 9 }, () => ({ h: '', a: '', spL: '', spR: '' })));
+            const rosterHome = loadJSON(RHOME_KEY, []);
+            const rosterAway = loadJSON(RAWAY_KEY, []);
+            const activeSlot = parseInt(localStorage.getItem(ACTIVE_KEY) || '1', 10);
+            const overlays = loadJSON(OV_KEY, { T: '', P: '', Z: '', opacity: 0.12, mode: 'color' });
+            const icons = loadJSON(ICON_KEY, { T: '', P: '', Z: '' });
+            
+            setState(prevState => ({ ...prevState, lineup, rosterHome, rosterAway, activeSlot, overlays, icons }));
+          }, []);
+
+          React.useEffect(() => {
+            saveJSON(LINEUP_KEY, state.lineup);
+            saveJSON(RHOME_KEY, state.rosterHome);
+            saveJSON(RAWAY_KEY, state.rosterAway);
+            localStorage.setItem(ACTIVE_KEY, String(state.activeSlot));
+            saveJSON(OV_KEY, state.overlays);
+            saveJSON(ICON_KEY, state.icons);
+          }, [state]);
+
+          return React.createElement(React.Fragment, null,
+            React.createElement('div', { className: "fixed", style: { top: state.y || '20px', left: '50%', transform: `translateX(-50%) scale(${state.scale || 1})`, transformOrigin: 'top center' } },
+              React.createElement(Scoreboard, { state: state })
+            ),
+            isAdmin && React.createElement('button', {
+              className: "fixed top-4 right-4 z-[2147483650] w-9 h-9 rounded-full bg-blue-400 text-gray-900 font-bold flex items-center justify-center border-none shadow-lg cursor-pointer",
+              onClick: () => setPanelOpen(!panelOpen)
+            }, '⚙'),
+            // ControlPanel은 여기에 렌더링되지 않습니다. 제어는 localStorage를 통해 이루어집니다.
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+
+    </script>
+</body>
+</html>
