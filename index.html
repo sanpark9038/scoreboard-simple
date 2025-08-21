@@ -188,7 +188,7 @@
             
             return React.createElement('div', { className: "fixed top-4 right-4 z-[2147483647] bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md p-4 min-w-[640px] text-white max-h-[calc(100vh-32px)] overflow-auto resize transition-opacity duration-300", style: { opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' } },
                 React.createElement('h3', { className: 'text-xs uppercase font-semibold text-gray-400 tracking-widest sticky top-0 bg-gray-900/95 z-10 py-1 flex justify-center' }, 'Overlay Controls', React.createElement('button', { className: 'absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center border border-gray-700 rounded-md bg-gray-800 text-white cursor-pointer hover:border-blue-400', onClick: () => setPanelOpen(false) }, '✕')),
-                // Control Panel UI Elements
+                // ... Control Panel UI Elements ... (This is where all the controls go)
             );
         });
 
@@ -227,7 +227,7 @@
           }, [state]);
 
           return React.createElement(React.Fragment, null,
-            React.createElement('div', { className: "font-sans text-white", class: isAdmin ? 'bg-gray-900 min-h-screen p-8 flex flex-col items-center justify-center' : '' },
+            React.createElement('div', { className: `font-sans text-white ${isAdmin ? 'bg-gray-900 min-h-screen p-8 flex flex-col items-center justify-center' : ''}` },
                 React.createElement('div', { className: "fixed", style: { top: state.y || '20px', left: '50%', transform: `translateX(-50%) scale(${state.scale || 1})`, transformOrigin: 'top center' } },
                   React.createElement(Scoreboard, { state: state })
                 ),
