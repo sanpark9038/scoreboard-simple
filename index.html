@@ -132,7 +132,7 @@
             };
 
             const handleAddPlayer = (side) => {
-                const name = side === 'home' ? rosterHomeName.trim() : rosterAwayName.trim();
+                const name = (side === 'home' ? rosterHomeName : rosterAwayName).trim();
                 const race = side === 'home' ? rosterHomeRace : rosterAwayRace;
                 if (!name) return;
                 const rosterKey = side === 'home' ? 'rosterHome' : 'rosterAway';
